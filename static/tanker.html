@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta name="viewport" content="width=device-width" />
+
+    <style>
+      body { font-family: Tahoma, Geneva, sans-serif; text-align: center; }
+    </style>
+    
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.12.0/dist/phaser.min.js"></script>
+    <script type="text/javascript" src="colyseus.js"></script>
+
+    <style type="text/css">
+      .player {
+        width: 100px;
+        height: 100px;
+        position: absolute;
+        padding-top: 24px;
+        box-sizing: border-box;
+        left: 0;
+        top: 0;
+      }
+    </style>
+
+  </head>
+  <body>
+    <script>
+        
+    class tankerGame extends Phaser.Scene{
+        constructor(){
+            super("tankerGame");
+            this.players = {};
+            
+        }
+        
+        create()
+        {   
+            this.cursors = this.input.keyboard.createCursorKeys();
+            this.add.image(800, 500, 'bg');
+            this.connectSocket();     
+            
+            this.add.existing(new Brain(this, 264, 250));
+            this.text = this.add.text(10, 10, '', { font: '16px Courier', fill: '#ffffff' });
+        }
+        
+        
+        
+        connectSocket() {
+            let game = this;
+            
+            
+            this.host =  window.document.location.host.replace(/:.*/, '');
+            this.client = new Colyseus.Client(location.protocol.replace("http", "ws") + this.host + (location.port ? ':' + location.port : ''));
+            this.room = this.client.join("tanker");
+            this.players = {};
+        
+            this.room.listen("players/:id", function (change) {
+                let val = change.value;
+                if (change.operation === "add") {
+                       console.log('add', change);
+                       game.players[change.path.id] = new TankerPlayer(game, val.team,  val.x, val.y);
+                       console.log(game.players[change.path.id]);
+                       
+                } else if (change.operation === "remove") {
+                    console.log('remove', change);
+                    game.players[change.path.id].destroy();
+                    delete game.players[change.path.id];
+                }
+            });  
+            
+            
+            this.room.listen("players/:id/:axis", function (change) {
+                //console.log(change.value);
+                
+                if(change.path.axis === "x") {
+                    game.players[change.path.id].player.x = change.value;
+                } else {
+                     game.players[change.path.id].player.y = change.value;
+                }
+
+
+            });
+                        
+        }
+        createPlayer(playerName, posX, posY) {
+            
+            let particles = this.add.particles('greenBalls');
+
+            let emitter = particles.createEmitter({
+                speed: 100,
+                scale: { start: 0.2, end: 0 },
+                blendMode: 'ADD'
+            });
+
+            let player = this.physics.add.sprite(posX, posY, playerName);
+            
+            player.scaleX = 0.4;
+            player.scaleY = 0.4;
+            
+            player.setVelocity(0, 0);
+            player.setBounce(1, 1);
+            player.setCollideWorldBounds(true);
+
+            emitter.startFollow(player);
+            
+            
+            return player;
+        }
+        
+        update(loop){
+            if(this.cursors.left.isDown){                
+                this.room.send({x: -1});
+            }
+            
+            if(this.cursors.right.isDown){                
+                this.room.send({x: +1});
+            }
+            
+            if(this.cursors.down.isDown){                
+                this.room.send({y: -1});
+            }
+            
+            if(this.cursors.up.isDown){                
+                this.room.send({y: +1});
+            }
+            
+            this.text.setText([
+                'Testuje',
+                'MSERWIS ',
+                'FPS: ' + this.time.fps
+            ]);
+        }
+        
+    }
+    
+    class preloadGame extends Phaser.Scene{
+        constructor(){
+            super("PreloadGame");
+        }
+        
+        preload() {
+            this.load.setBaseURL('/');
+            this.load.image('bg', 'assets/space_bg.jpg');
+            this.load.image('denis', 'assets/denis.jpg');
+            this.load.image('jacek', 'assets/jacek.jpg');
+            this.load.image('playerEffect1', 'assets/green-orb.png');
+            this.load.image('playerEffect2', 'assets/sparkle.png');
+        }
+        
+        create(){
+            this.scene.start("tankerGame");
+        }
+    }
+        
+    var config = {
+        type: Phaser.AUTO,
+        width: 1920,
+        height: 1080,
+        roundPixels: true,
+        backgroundColor: '#ffff00',
+        physics: {
+            default: 'arcade',
+            arcade: {
+                gravity: { y: 0 }
+            }
+        },
+        scene: [preloadGame, tankerGame]
+    };
+
+    
+    class TankerPlayer {
+        constructor(game, playerName, posX, posY) {
+            
+            let particleType = 'playerEffect1';
+            if(playerName == 'jacek') {
+                particleType = 'playerEffect2';
+            }
+            this.particles = game.add.particles(particleType);
+
+            this.emitter = this.particles.createEmitter({
+                speed: 100,
+                scale: { start: 0.2, end: 0 },
+                blendMode: 'ADD'
+            });
+
+            this.player = game.physics.add.sprite(posX, posY, playerName);
+            
+            this.player.scaleX = 0.4;
+            this.player.scaleY = 0.4;
+            
+            this.player.setVelocity(0, 0);
+            this.player.setBounce(1, 1);
+            this.player.setCollideWorldBounds(true);
+
+            this.emitter.startFollow(this.player);
+            
+        }
+        
+        destroy() {
+            this.player.destroy();
+            this.particles.destroy();
+        }
+    }
+    
+    var game = new Phaser.Game(config);
+
+
+   class Brain extends Phaser.GameObjects.Sprite {
+
+    constructor (scene, x, y)
+    {
+        super(scene, x, y);
+
+        this.setTexture('jacek');
+        this.setPosition(x, y);
+    }
+
+    preUpdate (time, delta)
+    {
+        super.preUpdate(time, delta);
+
+        this.rotation += 0.08;
+    }
+
+}
+ 
+    
+    
+    
+    
+    
+    
+    </script>
+
+
+      
+    <script type="text/javascript" src="client.js"></script>
+  </body>
+</html>
